@@ -51,6 +51,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		memcpy(pOutput, incoming_audio.data(), bytes_max);
 		incoming_audio.erase(incoming_audio.begin(), incoming_audio.begin() + frameCount * 2);
 		//incoming_audio.clear();
+		//CNC_INFO(std::format("Audio Queue: {}", incoming_audio.size()));
 	}
 
 	//memcpy(pOutput, pInput, frameCount * bytes_per_frame);
