@@ -1,5 +1,5 @@
 /bin
 /bin-int
-/vendor
 /vs2022
 .vscode/
+/vendor/asio
