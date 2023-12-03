@@ -5,6 +5,7 @@
 #include <optional>
 #include <chrono>
 
+#include "scene.h"
 #include "utility.h"
 #include "vecmath.h"
 #include "font.h"
@@ -30,20 +31,7 @@ namespace ml
 		float sine_wave(const float min, const float max, const float freq) const;
 	};
 
-	class scene
-	{
-	public:
 
-
-		virtual void on_attach() {}
-		virtual void on_detach() {}
-
-		virtual void on_before_update() {};
-		virtual void on_update() {};
-		virtual void on_after_update() {};
-
-		virtual ~scene() = default;
-	};
 
 	class shader_program
 	{
@@ -94,6 +82,13 @@ namespace ml
 
 	namespace app
 	{
+
+		struct window_props
+		{
+			bool transparent{ false };
+			bool decorated{ true };
+			bool resizable{ true };
+		};
 
 		struct character_modifier
 		{
@@ -174,6 +169,8 @@ namespace ml
 		std::int32_t texture(const texture2d& tex);
 		void no_texture();
 
+		void set_framebuffer_srgb(const bool value);
+
 		void draw_text(const font& fnt, const std::string& text, const float scl = 1.0f, const float line_gap = 1.0f);
 		void draw_text(const font& fnt, const std::string& text, const float scl, const float line_gap, const character_modifier_fn& fn);
 
@@ -187,12 +184,17 @@ namespace ml
 
 		void with(std::function<void(void)>&& f);
 
+		void set_window_size(const vec2i& size);
 		vec2i get_window_size();
+		
+		void set_window_pos(const vec2i& pos);
+		vec2i get_window_pos();
+		
 		vec2f get_projection_size();
 		std::pair<vec2f, vec2f> get_viewport_bounds();
 
 		// Window
-		std::int32_t run();
+		std::int32_t run(const window_props& props = {});
 		void goto_scene(std::shared_ptr<scene> s);
 
 		// Keyboard Input
@@ -202,8 +204,12 @@ namespace ml
 		bool is_key_released(const key k);
 
 		// Mouse Input
+		
 		vec2i get_mouse_pos();
+		vec2i get_screen_mouse_pos();
+
 		bool is_mouse_down(const mouse_button btn);
+		bool is_mouse_pressed(const mouse_button btn);
 	}
 
 

@@ -18,6 +18,11 @@
 #include "font.h"
 #include "log.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+
 namespace ml
 {
 
@@ -27,6 +32,7 @@ namespace ml
 	}
 
 }
+
 
 #pragma region shader_program
 
@@ -282,6 +288,7 @@ namespace ml::app
 
 	static struct app_context
 	{
+		window_props props;
 		GLFWwindow *window = nullptr;
 		std::shared_ptr<scene> current_scene = std::make_shared<scene>();
 		std::shared_ptr<scene> next_scene = nullptr;
@@ -370,6 +377,7 @@ namespace ml::app
 
 		// Mouse
 		std::unordered_set<mouse_button> down_mouse_buttons;
+		std::unordered_set<mouse_button> pressed_mouse_buttons;
 
 	} s_input_context;
 
@@ -378,13 +386,16 @@ namespace ml::app
 		if (!s_mouse_button_mappings.contains(button))
 			return;
 
+		const auto btn_mapping = s_mouse_button_mappings[button];
+
 		if (action == GLFW_PRESS)
 		{
-			s_input_context.down_mouse_buttons.insert(s_mouse_button_mappings[button]);
+			s_input_context.pressed_mouse_buttons.insert(btn_mapping);
+			s_input_context.down_mouse_buttons.insert(btn_mapping);
 		}
 		else if (action == GLFW_RELEASE)
 		{
-			s_input_context.down_mouse_buttons.erase(s_mouse_button_mappings[button]);
+			s_input_context.down_mouse_buttons.erase(btn_mapping);
 		}
 	}
 
@@ -418,6 +429,7 @@ namespace ml::app
 
 	static void reset_input()
 	{
+		s_input_context.pressed_mouse_buttons.clear();
 		s_input_context.pressed_keys.clear();
 		s_input_context.released_keys.clear();
 		s_input_context.text.clear();
@@ -432,6 +444,14 @@ namespace ml::app
 #ifdef DEBUG
 		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 #endif
+
+		if (s_app_context.props.transparent)
+			glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, 1);
+
+		glfwWindowHint(GLFW_DECORATED, s_app_context.props.decorated);
+		glfwWindowHint(GLFW_RESIZABLE, s_app_context.props.resizable);
+			
+
 		/* Create a windowed mode window and its OpenGL context */
 		s_app_context.window = glfwCreateWindow(1280, 768, "Hello World", NULL, NULL);
 		if (!s_app_context.window)
@@ -902,6 +922,11 @@ namespace ml::app
 		s_rendering_context.current_texture_unit_idx = 0;
 	}
 
+	void set_framebuffer_srgb(const bool value)
+	{
+		value ? glEnable(GL_FRAMEBUFFER_SRGB) : glDisable(GL_FRAMEBUFFER_SRGB);
+	}
+
 	void draw_text(const font &fnt, const std::string &text, const float scl, const float line_gap)
 	{
 		draw_text(fnt, text, scl, line_gap, [](const std::int32_t) -> character_modifier
@@ -1024,11 +1049,25 @@ namespace ml::app
 		pop();
 	}
 
+	void set_window_size(const vec2i& size)
+	{
+		glfwSetWindowSize(s_app_context.window, size[0], size[1]);
+	}
+
 	vec2i get_window_size()
 	{
 		vec2i s;
 		glfwGetWindowSize(s_app_context.window, &s[0], &s[1]);
 		return s;
+	}
+
+	void set_window_pos(const vec2i& pos) { glfwSetWindowPos(s_app_context.window, pos[0], pos[1]); }
+
+	vec2i get_window_pos()
+	{
+		std::int32_t x, y;
+		glfwGetWindowPos(s_app_context.window, &x, &y);
+		return { x, y };
 	}
 
 	vec2f get_projection_size()
@@ -1050,10 +1089,11 @@ namespace ml::app
 
 	const time &get_time() { return s_app_context.current_time; }
 
-	std::int32_t run()
+	std::int32_t run(const window_props& props)
 	{
 
 		auto &app_ctx = s_app_context;
+		s_app_context.props = props;
 
 		if (initialize().is_error())
 		{
@@ -1113,9 +1153,9 @@ namespace ml::app
 
 	void goto_scene(std::shared_ptr<scene> s) { s_app_context.next_scene = std::move(s); }
 
-	const std::string &app::get_input_text() { return s_input_context.text; }
+	const std::string& get_input_text() { return s_input_context.text; }
 
-	bool app::is_key_pressed(const key k) { return s_input_context.pressed_keys.contains(k); }
+	bool is_key_pressed(const key k) { return s_input_context.pressed_keys.contains(k); }
 
 	bool is_key_down(const key k) { return s_input_context.down_keys.contains(k); }
 
@@ -1123,11 +1163,24 @@ namespace ml::app
 
 	bool is_mouse_down(const mouse_button btn) { return s_input_context.down_mouse_buttons.contains(btn); }
 
+	bool is_mouse_pressed(const mouse_button btn) { return s_input_context.pressed_mouse_buttons.contains(btn); }
+
 	vec2i get_mouse_pos()
 	{
 		double x, y;
 		glfwGetCursorPos(s_app_context.window, &x, &y);
 		return { x, y };
+	}
+
+	vec2i get_screen_mouse_pos()
+	{
+#ifdef _WIN32
+		POINT p;
+		GetCursorPos(&p);
+		return vec2i(static_cast<std::int32_t>(p.x), static_cast<std::int32_t>(p.y));
+#else
+		throw std::runtime_error("Unimplemented");
+#endif
 	}
 
 }

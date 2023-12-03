@@ -119,6 +119,7 @@ project "ConcordiaClient"
         "vendor/miniaudio",
         "vendor/asio/include",
         "src/common", 
+        "src/ml",
     }
     
     files { 
@@ -127,10 +128,14 @@ project "ConcordiaClient"
         "src/client/**.cpp", 
         "src/client/**.h"  
     }
+
+    postbuildcommands {
+        "{COPY} ../assets ../bin/%{cfg.buildcfg}/%{prj.name}/assets"
+    }
     
     filter "system:windows"
         defines { "_WIN32_WINDOWS" }
-        links { "ws2_32" }
+        links { "ws2_32", "MediaLib" }
 
 
 
