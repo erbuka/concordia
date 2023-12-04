@@ -116,6 +116,7 @@ project "ConcordiaClient"
     debugdir "bin/%{cfg.buildcfg}/%{prj.name}"
 
     includedirs {
+        "vendor/glad/include",
         "vendor/miniaudio",
         "vendor/asio/include",
         "src/common", 

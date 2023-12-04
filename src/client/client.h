@@ -1,7 +1,10 @@
 #pragma once
 
+#include <memory>
+
 #include <core/scene.h>
 #include <core/texture.h>
+#include <effects/bloom.h>
 
 #include "ui.h"
 
@@ -25,8 +28,12 @@ namespace cnc
 		voice_chat_scene_impl* _impl;
 		ui _ui;
 
-		texture2d _tx_background;
+		texture2d _tx_background, _tx_frame;
+		framebuffer _fb_bloom;
+		std::unique_ptr<effects::bloom> _fx_bloom;
 
 		void init();
+		void draw_wave_forms();
+
 	};
 }

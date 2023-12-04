@@ -852,10 +852,7 @@ namespace ml::app
 	void color(const vec4f &c) { s_rendering_context.current.top().color = c; }
 	void color(const vec3f &c) { color(vec4f{c, 1.0f}); }
 
-	void color(const float c)
-	{
-		color({c, c, c, 1.0f});
-	}
+	void color(const float c) { color({c, c, c, 1.0f}); }
 
 	void translate(const vec3f &t)
 	{

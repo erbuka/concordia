@@ -2,6 +2,8 @@
 
 #include <span>
 
+#include <glad/glad.h>
+
 #include <core/vecmath.h>
 #include <core/application.h>
 #include <common.h>
@@ -18,11 +20,80 @@ namespace cnc
 	using namespace ml;
 	using asio::ip::tcp;
 
-	static constexpr vec2i s_window_size = { 400, 400 };
+	namespace colors
+	{
+		constexpr vec3f blue = vec3f{ .8f, 1.2f, 2.0f };
+		constexpr vec3f red = vec3f{ 2.0f, .8f, 1.2f };
+	}
+
+	static constexpr vec2i s_window_size = { 420, 420 };
+	static constexpr vec2i s_frame_padding = { 10, 10 };
 	static constexpr auto s_projection = ortho<float>(0, s_window_size[0], 0, s_window_size[0]);
+
+
+	class history_buffer
+	{
+	private:
+		static constexpr std::size_t buffer_count = 50;
+		static constexpr std::size_t size_in_samples = buffer_size * buffer_count;
+		std::size_t _current_idx = 0;
+		std::array<sample_t, size_in_samples> _buffer{};
+		
+		std::size_t wrap(const std::size_t i) const { return i % size_in_samples; }
+		
+	public:
+		using value_type = sample_t;
+
+		class iterator_sentinel {};
+
+		class iterator
+		{
+		private:
+			history_buffer& _owner;
+			std::size_t _start, _offset;
+		public:
+			iterator(history_buffer& owner, const std::size_t start, const std::size_t offset) : 
+				_start(start), _owner(owner), _offset(offset) {}
+
+			sample_t& operator*() { return _owner.get(_start + _offset); }
+
+			iterator& operator++() {
+				++_offset;
+				return *this;
+			}
+
+			bool operator==(iterator_sentinel) const { return _offset == size_in_samples; }
+			bool operator!=(iterator_sentinel) const { return _offset != size_in_samples; }
+
+		};
+
+		sample_t& operator[](const std::size_t idx) { return get(idx); }
+		const sample_t& operator[](const std::size_t idx) const { return get(idx); }
+
+		sample_t& get(const std::size_t idx) { return _buffer[wrap(idx + _current_idx)]; }
+		const sample_t& get(const std::size_t idx) const { return _buffer[wrap(idx + _current_idx)]; }
+
+		auto begin() { return iterator{ *this, _current_idx, 0 }; }
+		auto end() { return iterator_sentinel{}; }
+
+		void push_back(const sample_t s) 
+		{ 
+			get(_current_idx) = s; 
+			_current_idx = wrap(_current_idx + 1);
+		}
+
+		sample_t sample(const float age) const 
+		{ 
+			const std::size_t start = ((_current_idx / buffer_size + 1) * buffer_size) % size_in_samples;
+			return get(start + static_cast<std::size_t>(age * size_in_samples)); 
+		}
+
+	};
 
 	struct voice_chat_scene_impl 
 	{
+
+
 		static constexpr std::size_t network_buffer_count = 20;
 
 		voice_chat_config config;
@@ -34,28 +105,10 @@ namespace cnc
 
 		exclusive_resource<std::vector<sample_t>> incoming_audio;
 
-		std::array<buffer_t, network_buffer_count> network_buffers;
-		std::atomic_size_t current_network_buffer_idx{ 0 };
-
+		history_buffer input_history;
+		history_buffer output_history;
+		
 		voice_chat_scene_impl() : socket(ctx) {};
-
-		auto& get_current_network_buffer() { return network_buffers[current_network_buffer_idx]; }
-		void next_network_buffer() { current_network_buffer_idx = (current_network_buffer_idx + 1) % network_buffers.size(); }
-
-		sample_t sample_incoming_audio(const float age)
-		{
-			static constexpr auto total_samples = network_buffer_count * buffer_size;
-			const std::size_t offset = buffer_size * current_network_buffer_idx;
-			const std::size_t target_sample_idx = (offset + static_cast<std::size_t>(age * total_samples)) % total_samples;
-			/*
-			const auto buffer_idx = target_sample_idx / buffer_size;
-			const auto idx = target_sample_idx % buffer_size;
-			return network_buffers[buffer_idx][idx];
-			*/
-
-			return *(static_cast<sample_t*>((void*)network_buffers.data()) + target_sample_idx);
-
-		}
 
 
 	};
@@ -87,8 +140,10 @@ namespace cnc
 		if (impl.socket.is_open())
 		{
 			processed_input.resize(input.size());
+			
 			std::ranges::transform(input, processed_input.begin(), [vol = impl.config.input_volume](const sample_t s) { return s * vol; });
-
+			std::ranges::copy(processed_input, std::back_inserter(impl.input_history));
+			
 			try { asio::write(impl.socket, asio::buffer(processed_input)); }
 			catch (std::exception& ex) { CNC_ERROR(ex.what()); impl.socket.close(); }
 		}
@@ -124,6 +179,8 @@ namespace cnc
 
 		_impl->read_thread = std::thread([&] {
 
+			buffer_t buffer;
+
 			auto& socket = _impl->socket;
 			auto& incoming_audio = _impl->incoming_audio;
 
@@ -132,16 +189,16 @@ namespace cnc
 				try {
 					
 
-					auto& buffer = _impl->get_current_network_buffer();
 
 					const auto bytes_read = asio::read(socket, asio::buffer(buffer));
-					
+
+					std::ranges::copy(buffer, std::back_inserter(_impl->output_history));
+
 					if (bytes_read > 0)
 					{
 						auto [lock, res] = incoming_audio.get();
 						std::ranges::copy(buffer, std::back_inserter(res));
 					}
-					_impl->next_network_buffer();
 
 					// CNC_INFO(std::format("Incoming size: {}", incoming_audio.size()));
 				}
@@ -155,9 +212,67 @@ namespace cnc
 			}
 
 		});
+		
 
-
+		// Gfx
 		app::set_framebuffer_srgb(true);
+
+		_tx_background = texture2d::load_from_file("assets/ui_bg.png", texture_format::rgba8, texture_filter_mode::linear);
+		_tx_frame = texture2d::load_from_file("assets/ui_frame.png", texture_format::rgba8, texture_filter_mode::linear);
+
+		_fb_bloom.create({ texture_format::rgba32f }, s_window_size[0], s_window_size[1]);
+		_fx_bloom = std::make_unique<effects::bloom>();
+		_fx_bloom->kick = 0.25f;
+		_fx_bloom->threshold = 1.0f;
+
+	}
+
+	void voice_chat_scene::draw_wave_forms()
+	{
+		app::reset_context();
+		app::viewport(s_window_size - s_frame_padding);
+		app::set_projection(s_projection);
+
+		_fb_bloom.bind();
+
+		app::clear(vec4f{ 0.0f, 0.0f, 0.0f, 0.0f });
+
+		// Wave form
+		app::with([&] {
+			app::color(colors::blue);
+			app::begin(app::primitive_type::line_strip);
+			for (auto x : std::views::iota(0, s_window_size[0]))
+			{
+				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
+				const float age = x / float(s_window_size[0]);
+				//const float y = s_window_size[1] * .45f + _impl->sample_incoming_audio(x / float(s_window_size[0])) / normalizer * s_window_size[1] * .5f;
+				const float y = s_window_size[1] * .4f + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .5f;
+				app::vertex(vec2f{ x, y });
+			}
+			app::end();
+			});
+
+
+
+		// Wave form
+		app::with([&] {
+			app::color(colors::red);
+			app::begin(app::primitive_type::line_strip);
+			for (auto x : std::views::iota(0, s_window_size[0]))
+			{
+				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
+				const float age = x / float(s_window_size[0]);
+				const float y = s_window_size[1] * .6f + _impl->input_history.sample(age) / normalizer * s_window_size[1] * .5f;
+				app::vertex(vec2f{ x, y });
+			}
+			app::end();
+			});
+
+		// Bloom
+		app::flush();
+		_fb_bloom.unbind();
+
+		_fx_bloom->apply(_fb_bloom.get_attachment(0));
 	}
 
 	voice_chat_scene::~voice_chat_scene() = default;
@@ -165,8 +280,6 @@ namespace cnc
 	void voice_chat_scene::on_attach()
 	{
 		_impl = new voice_chat_scene_impl();
-
-		_tx_background = texture2d::load_from_file("assets/ui_bg.png", texture_format::rgba8, texture_filter_mode::linear);
 
 		app::set_window_size(s_window_size);
 		
@@ -180,27 +293,42 @@ namespace cnc
 
 		_ui.capture_input();
 
+		// Window dragging
+		vec2f drag_delta;
+		if (_ui.window_drag(drag_delta))
+			app::set_window_pos(app::get_window_pos() + vec2i{ drag_delta });
+
+		draw_wave_forms();
+
+		app::reset_context();
+		app::viewport(ws);
 		app::set_projection(s_projection);
 		app::clear(vec4f{ 0.0f, 0.0f, 0.0f, 0.0f });
 
 		// Background
-		app::push();
-		//app::color(8.0f);
-		app::pivot({ 0, 0 });
-		app::texture(_tx_background);
-		app::quad({ 0, 0, }, vec2f{ ws });
-		app::no_texture();
-		app::pop();
 		
-		// Wave form
-		app::begin(app::primitive_type::line_strip);
-		for (auto x : std::views::iota(0, s_window_size[0]))
-		{
-			static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
-			const float y = s_window_size[1] * .5f + _impl->sample_incoming_audio(x / float(s_window_size[0])) / normalizer * s_window_size[1] * .5f;
-			app::vertex(vec2f{ x, y });
-		}
-		app::end();
+		app::with([&] {
+			app::color(1.0f);
+			app::pivot({ 0, 0 });
+			app::texture(_tx_background);
+			app::quad({ 0, ws[1] - _tx_background.get_height() }, {_tx_background.get_width(), _tx_background.get_height()});
+			app::no_texture();
+		});
+		app::flush();
+		
+
+		// Blit wave forms
+		glBlendFunc(GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA);
+		app::with([&] {
+			app::pivot({ 0, 0 });
+			app::color(1.0f);
+			app::texture(_fx_bloom->get_result());
+			app::quad({ 0, 0 }, vec2f{ ws });
+			app::no_texture();
+		});
+		app::flush();
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		
 
 		// Mute button
 		app::color(_impl->config.input_volume == 0.0f ? vec3f{ 1.0f, 0.0f, 0.0f } : vec3f{ 0.0f, 1.0f, 0.0f });
@@ -208,11 +336,17 @@ namespace cnc
 			_impl->config.input_volume = (1.0f - _impl->config.input_volume);
 		}
 
-		// Window dragging
-		vec2f drag_delta;
-		if (_ui.window_drag(drag_delta))
-			app::set_window_pos(app::get_window_pos() + vec2i{ drag_delta });
 
+		// Draw frame
+		app::with([&] {
+			app::color(1.0f);
+			app::pivot({ 0, 0 });
+			app::texture(_tx_frame);
+			app::quad({ 0, ws[1] - _tx_frame.get_height() }, {_tx_frame.get_width(), _tx_frame.get_height()});
+			app::no_texture();
+		});
+
+		// Flush
 		app::flush();
 	}
 

@@ -16,10 +16,9 @@ namespace ml::effects
 		out vec4 oColor;
 
 		void main() {
-				vec4 smpl = texture(uSource, vUv);
-				vec3 color = smpl.rgb * smpl.a;
-				float luma = dot(vec3(0.299, 0.587, 0.114), color);
-				oColor = vec4(smoothstep(uThreshold - uKick, uThreshold + uKick, luma) * color, 1.0);
+			vec4 smpl = texture(uSource, vUv);
+			float luma = dot(vec3(0.299, 0.587, 0.114), smpl.rgb);
+			oColor = vec4(smoothstep(uThreshold - uKick, uThreshold + uKick, luma) * smpl.rgb, 1.0);
 		}
 	)glsl";
 
@@ -33,14 +32,14 @@ namespace ml::effects
 			out vec4 oColor;
 
 			void main() {
-					vec2 s = 1.0 / vec2(textureSize(uSource, 0));
+				vec2 s = 1.0 / vec2(textureSize(uSource, 0));
 
-					vec3 tl = texture(uSource, vUv + vec2(-s.x, +s.y)).rgb;
-					vec3 tr = texture(uSource, vUv + vec2(+s.x, +s.y)).rgb;
-					vec3 bl = texture(uSource, vUv + vec2(-s.x, -s.y)).rgb;
-					vec3 br = texture(uSource, vUv + vec2(+s.x, -s.y)).rgb;
+				vec3 tl = texture(uSource, vUv + vec2(-s.x, +s.y)).rgb;
+				vec3 tr = texture(uSource, vUv + vec2(+s.x, +s.y)).rgb;
+				vec3 bl = texture(uSource, vUv + vec2(-s.x, -s.y)).rgb;
+				vec3 br = texture(uSource, vUv + vec2(+s.x, -s.y)).rgb;
 		
-					oColor = vec4((tl + tr + bl + br) / 4.0,  1.0);
+				oColor = vec4((tl + tr + bl + br) / 4.0,  1.0);
 			}
 	)glsl";
 
@@ -56,21 +55,21 @@ namespace ml::effects
 
 		void main() {
 
-				vec2 s = 1.0 / vec2(textureSize(uUpsample, 0));
+			vec2 s = 1.0 / vec2(textureSize(uUpsample, 0));
 
-				vec3 upsampleColor = vec3(0.0);
+			vec3 upsampleColor = vec3(0.0);
 
-				upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(-s.x, +s.y)).rgb;
-				upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(+0.0, +s.y)).rgb;
-				upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(+s.x, +s.y)).rgb;
-				upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(-s.x, +0.0)).rgb;
-				upsampleColor += 4.0 * texture(uUpsample, vUv + vec2(+0.0, +0.0)).rgb;
-				upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(+s.x, +0.0)).rgb;
-				upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(-s.x, -s.y)).rgb;
-				upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(+0.0, -s.y)).rgb;
-				upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(+s.x, -s.y)).rgb;
+			upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(-s.x, +s.y)).rgb;
+			upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(+0.0, +s.y)).rgb;
+			upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(+s.x, +s.y)).rgb;
+			upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(-s.x, +0.0)).rgb;
+			upsampleColor += 4.0 * texture(uUpsample, vUv + vec2(+0.0, +0.0)).rgb;
+			upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(+s.x, +0.0)).rgb;
+			upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(-s.x, -s.y)).rgb;
+			upsampleColor += 2.0 * texture(uUpsample, vUv + vec2(+0.0, -s.y)).rgb;
+			upsampleColor += 1.0 * texture(uUpsample, vUv + vec2(+s.x, -s.y)).rgb;
 
-				oColor = vec4(upsampleColor / 16.0 + texture(uPrevious, vUv).rgb, 1.0);
+			oColor = vec4(upsampleColor / 16.0 + texture(uPrevious, vUv).rgb, 1.0);
 
 		}
 
@@ -90,9 +89,8 @@ namespace ml::effects
 
 		void main() {
 			vec4 smpl = texture(uColor, vUv);
-			vec3 color = smpl.rgb * smpl.a;
 			vec3 bloom = texture(uBloom, vUv).rgb;
-			vec3 mapped = vec3(1.0) - exp(-(color + bloom) * uExposure);
+			vec3 mapped = vec3(1.0) - exp(-(smpl.rgb + bloom) * uExposure);
 			oColor = vec4(mapped, 1.0);
 		}
 
@@ -203,7 +201,7 @@ namespace ml::effects
 		// Combine
 		app::use_program(_prg_combine);
 		_fb_combine.bind();
-		app::clear();
+		app::clear(vec4f(0.0f));
 
 		_prg_combine.uniform("uExposure", exposure);
 		_prg_combine.uniform("uColor", app::texture(src));
