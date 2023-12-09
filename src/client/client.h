@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <core/font.h>
 #include <core/scene.h>
 #include <core/texture.h>
 #include <effects/bloom.h>
@@ -28,7 +29,8 @@ namespace cnc
 	private:
 		voice_chat_scene_impl* _impl;
 		ui _ui;
-
+		
+		font _font;
 		texture2d _tx_background, _tx_frame, _tx_volume, _tx_microphone;
 		framebuffer _fb_bloom;
 		std::unique_ptr<effects::bloom> _fx_bloom;

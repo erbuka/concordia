@@ -36,14 +36,21 @@ namespace cnc
 	{
 
 		voice_chat_config config;
+
+		float saved_input_volume{1.f}, saved_output_volume{1.f};
+
+
 		ma_device device{};
 		asio::io_context ctx{};
 		tcp::socket socket;
+
 
 		float bandwidth_in{ 0 };
 		float bandwidth_out{ 0 };
 
 		std::thread read_thread, stats_thread;
+
+		std::atomic_bool running{ true };
 
 		exclusive_resource<std::vector<sample_t>> incoming_audio;
 
@@ -72,8 +79,6 @@ namespace cnc
 				ia.erase(ia.begin(), ia.begin() + frame_count * audio_channels);
 			}
 		});
-
-		//memcpy(pOutput, pInput, frameCount * bytes_per_frame);
 
 		if (impl.socket.is_open())
 		{
@@ -138,7 +143,6 @@ namespace cnc
 						std::ranges::copy(buffer, std::back_inserter(res));
 					}
 
-					// CNC_INFO(std::format("Incoming size: {}", incoming_audio.size()));
 				}
 				catch (std::exception& ex)
 				{
@@ -149,16 +153,18 @@ namespace cnc
 				std::this_thread::yield();
 			}
 
+			CNC_INFO("Network thread exiting");
+
 		});
 		
 		_impl->stats_thread = std::thread([&] {
-			while (true)
+			while (_impl->running)
 			{
 				_impl->bandwidth_in = _impl->input_history.collect_inserted_bytes() / 1024.0f;
 				_impl->bandwidth_out = _impl->output_history.collect_inserted_bytes() / 1024.0f;
-				CNC_INFO(std::format("In: {:.2f}    Out: {:.2f}", _impl->bandwidth_in, _impl->bandwidth_out));
 				std::this_thread::sleep_for(std::chrono::seconds(1));
 			}
+			CNC_INFO("Stats thread exiting");
 		});
 
 		// Gfx
@@ -175,6 +181,7 @@ namespace cnc
 		_fx_bloom->kick = 0.25f;
 		_fx_bloom->threshold = 1.0f;
 
+		_font.load_from_file("assets/cour.ttf");
 		
 	}
 
@@ -192,15 +199,25 @@ namespace cnc
 
 		app::clear(vec4f{ 0.0f, 0.0f, 0.0f, 0.0f });
 
-		// Wave form
+		// Output Wave
 		app::with([&] {
+				
+			const float y_base = s_window_size[1] * .55f;
+
 			app::color(colors::blue);
+			
+			app::with([&] {
+				app::pivot({ 0, 0 });
+				app::translate({ 100, y_base + 16.0f, 0 });
+				app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_out), 16.0f);
+			});
+
 			app::begin(app::primitive_type::line_strip);
 			for (auto x : std::views::iota(0u, width))
 			{
 				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
 				const float age = x / float(width);
-				const float y = s_window_size[1] * .55f + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .25f;
+				const float y = y_base + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .25f;
 				app::vertex(vec2f{ x, y });
 			}
 			app::end();
@@ -208,9 +225,19 @@ namespace cnc
 
 
 
-		// Wave form
+		// Input Wave
 		app::with([&] {
+
+			const float y_base = s_window_size[1] * .7f;
+
 			app::color(colors::red);
+
+			app::with([&] {
+				app::pivot({ 0, 0 });
+				app::translate({ 100, y_base + 16.0f, 0 });
+				app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_in), 16.0f);
+			});
+
 			app::begin(app::primitive_type::line_strip);
 			for (auto x : std::views::iota(0u, width))
 			{
@@ -233,7 +260,10 @@ namespace cnc
 			app::color(_impl->config.input_volume == 0.0f ? vec3f{ .5f } : colors::red);
 
 			if (_ui.button(__LINE__, pos, _tx_microphone)) {
-				_impl->config.input_volume = (1.0f - _impl->config.input_volume);
+				if (_impl->config.input_volume == 0.0f)
+					_impl->config.input_volume = _impl->saved_input_volume;
+				else
+					_impl->saved_input_volume = std::exchange(_impl->config.input_volume, 0.0f);
 			}
 
 			_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.input_volume);
@@ -250,7 +280,10 @@ namespace cnc
 			app::color(_impl->config.output_volume == 0.0f ? vec3f{ .5f } : colors::blue);
 			
 			if (_ui.button(__LINE__, button_pos, _tx_volume)) {
-				_impl->config.output_volume = (1.0f - _impl->config.output_volume);
+				if (_impl->config.output_volume == 0.0f)
+					_impl->config.output_volume = _impl->saved_output_volume;
+				else
+					_impl->saved_output_volume = std::exchange(_impl->config.output_volume, 0);
 			}
 
 			_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.output_volume);
@@ -350,8 +383,10 @@ namespace cnc
 	void voice_chat_scene::on_detach()
 	{
 		ma_device_uninit(&_impl->device);
+		_impl->running = false;
 		_impl->socket.close();
 		_impl->read_thread.join();
+		_impl->stats_thread.join();
 		delete _impl;
 	}
 
