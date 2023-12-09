@@ -123,7 +123,7 @@ namespace ml
 			return std::ranges::find(std::forward<R>(r), value) != r.end();
  		}
 
-		auto enumerate = std::views::transform([i = std::size_t(0)]<typename T>(T&& val) mutable {
+		constexpr auto enumerate = std::views::transform([i = std::size_t(0)]<typename T>(T&& val) mutable {
 			return std::pair<std::size_t, T>(i++, std::forward<T>(val));
 		});
 

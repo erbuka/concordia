@@ -202,6 +202,7 @@ namespace ml
 		// Window
 		std::int32_t run(const window_props& props = {});
 		void goto_scene(std::shared_ptr<scene> s);
+		void quit();
 
 		// Keyboard Input
 		const std::string& get_input_text();

@@ -39,12 +39,13 @@ int main()
 			{
 				auto peer = listener.accept();
 
+				CNC_INFO("Client accepted");
+
 				{
 					std::scoped_lock lock(clients_mutex);
 					clients.push_back(connected_client(next_id++, std::move(peer)));
 				}
 
-				CNC_INFO("Client accepted");
 			}
 			catch (std::exception& ex)
 			{
@@ -52,7 +53,10 @@ int main()
 			}
 			std::this_thread::yield();
 		}
-		});
+
+		CNC_INFO("Accept thread exiting");
+
+	});
 
 	auto read_thread = std::thread([&] {
 
@@ -109,9 +113,14 @@ int main()
 
 			std::this_thread::yield();
 		}
+
+		CNC_INFO("Read thread exiting");
+
 	});
 
 	accept_thread.join();
 	read_thread.join();
+
+	return 0;
 
 }

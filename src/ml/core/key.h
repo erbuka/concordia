@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cinttypes>
 #include <string_view>
 
 namespace ml
 {
-    enum class key: uint32_t {
+    enum class key: std::uint32_t {
         none,
         enter,
         backspace,

@@ -6,6 +6,7 @@
 #include <ranges>
 #include <algorithm>
 #include <stdexcept>
+#include <cinttypes>
 
 namespace ml
 {
@@ -28,6 +29,8 @@ namespace ml
 		return v == static_cast<T>(0.0) ? 0 : v / std::abs(v);
 	}
 
+	template<typename T> requires std::is_arithmetic_v<T>
+	constexpr T epsilon = static_cast<T>(0.0001);
 
 	template<typename T> requires std::is_arithmetic_v<T>
 	constexpr auto radians(const T degrees) { return degrees * 0.0174532925f; }
@@ -35,10 +38,8 @@ namespace ml
 	template<std::floating_point T, std::size_t N>
 	constexpr bool almost_equal(const std::array<T, N>& a, const std::array<T, N>& b)
 	{
-		static constexpr T epsilon = T{ 0.0001 };
-
 		for (std::size_t i = 0; i < N; ++i)
-			if (std::abs(a[i] - b[i]) > epsilon)
+			if (std::abs(a[i] - b[i]) > epsilon<T>)
 				return false;
 		return true;
 	}
@@ -214,6 +215,24 @@ namespace ml
 	{
 		for (std::size_t i = 0; i < N; ++i)
 			if (lhs.data[i] != rhs.data[i])
+				return false;
+		return true;
+	}
+
+	template<typename T, std::size_t N>
+	constexpr bool operator>=(const vec<T, N>& lhs, const vec<T, N>& rhs)
+	{
+		for (std::size_t i = 0; i < N; ++i)
+			if (lhs.data[i] < rhs.data[i])
+				return false;
+		return true;
+	}
+
+	template<typename T, std::size_t N>
+	constexpr bool operator<=(const vec<T, N>& lhs, const vec<T, N>& rhs)
+	{
+		for (std::size_t i = 0; i < N; ++i)
+			if (lhs.data[i] > rhs.data[i])
 				return false;
 		return true;
 	}

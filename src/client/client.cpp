@@ -26,82 +26,24 @@ namespace cnc
 		constexpr vec3f red = vec3f{ 2.0f, .8f, 1.2f };
 	}
 
-	static constexpr vec2i s_window_size = { 420, 420 };
-	static constexpr vec2i s_frame_padding = { 10, 10 };
+	static constexpr vec2i s_window_size = { 400, 400 };
+	static constexpr vec2f s_slider_size = { 168, 10 };
+
 	static constexpr auto s_projection = ortho<float>(0, s_window_size[0], 0, s_window_size[0]);
 
 
-	class history_buffer
-	{
-	private:
-		static constexpr std::size_t buffer_count = 50;
-		static constexpr std::size_t size_in_samples = buffer_size * buffer_count;
-		std::size_t _current_idx = 0;
-		std::array<sample_t, size_in_samples> _buffer{};
-		
-		std::size_t wrap(const std::size_t i) const { return i % size_in_samples; }
-		
-	public:
-		using value_type = sample_t;
-
-		class iterator_sentinel {};
-
-		class iterator
-		{
-		private:
-			history_buffer& _owner;
-			std::size_t _start, _offset;
-		public:
-			iterator(history_buffer& owner, const std::size_t start, const std::size_t offset) : 
-				_start(start), _owner(owner), _offset(offset) {}
-
-			sample_t& operator*() { return _owner.get(_start + _offset); }
-
-			iterator& operator++() {
-				++_offset;
-				return *this;
-			}
-
-			bool operator==(iterator_sentinel) const { return _offset == size_in_samples; }
-			bool operator!=(iterator_sentinel) const { return _offset != size_in_samples; }
-
-		};
-
-		sample_t& operator[](const std::size_t idx) { return get(idx); }
-		const sample_t& operator[](const std::size_t idx) const { return get(idx); }
-
-		sample_t& get(const std::size_t idx) { return _buffer[wrap(idx + _current_idx)]; }
-		const sample_t& get(const std::size_t idx) const { return _buffer[wrap(idx + _current_idx)]; }
-
-		auto begin() { return iterator{ *this, _current_idx, 0 }; }
-		auto end() { return iterator_sentinel{}; }
-
-		void push_back(const sample_t s) 
-		{ 
-			get(_current_idx) = s; 
-			_current_idx = wrap(_current_idx + 1);
-		}
-
-		sample_t sample(const float age) const 
-		{ 
-			const std::size_t start = ((_current_idx / buffer_size + 1) * buffer_size) % size_in_samples;
-			return get(start + static_cast<std::size_t>(age * size_in_samples)); 
-		}
-
-	};
-
 	struct voice_chat_scene_impl 
 	{
-
-
-		static constexpr std::size_t network_buffer_count = 20;
 
 		voice_chat_config config;
 		ma_device device{};
 		asio::io_context ctx{};
 		tcp::socket socket;
-		std::thread read_thread;
 
+		float bandwidth_in{ 0 };
+		float bandwidth_out{ 0 };
+
+		std::thread read_thread, stats_thread;
 
 		exclusive_resource<std::vector<sample_t>> incoming_audio;
 
@@ -123,14 +65,10 @@ namespace cnc
 		std::span<sample_t> output(static_cast<sample_t*>(raw_output), frame_count * audio_channels);
 
 
-		const auto bytes_per_frame = ma_get_bytes_per_frame(impl.device.capture.format, audio_channels);
-		const auto bytes_max = bytes_per_frame * frame_count;
-
 		impl.incoming_audio.use([&](auto& ia) {
 			if (ia.size() >= frame_count * audio_channels)
 			{
 				std::copy(ia.begin(), ia.begin() + frame_count * audio_channels, output.begin());
-				// memcpy(raw_output, ia.data(), bytes_max);
 				ia.erase(ia.begin(), ia.begin() + frame_count * audio_channels);
 			}
 		});
@@ -167,7 +105,8 @@ namespace cnc
 		config.pUserData = _impl;
 		config.dataCallback = data_callback;
 
-		if (ma_device_init(NULL, &config, &_impl->device) != MA_SUCCESS) {
+		if (ma_device_init(NULL, &config, &_impl->device) != MA_SUCCESS) 
+		{
 			throw std::runtime_error("Can't initialize audio device!");
 		}
 
@@ -188,10 +127,9 @@ namespace cnc
 			{
 				try {
 					
-
-
 					const auto bytes_read = asio::read(socket, asio::buffer(buffer));
 
+					std::ranges::for_each(buffer, [vol = _impl->config.output_volume](sample_t& s) { s *= vol; });
 					std::ranges::copy(buffer, std::back_inserter(_impl->output_history));
 
 					if (bytes_read > 0)
@@ -213,24 +151,41 @@ namespace cnc
 
 		});
 		
+		_impl->stats_thread = std::thread([&] {
+			while (true)
+			{
+				_impl->bandwidth_in = _impl->input_history.collect_inserted_bytes() / 1024.0f;
+				_impl->bandwidth_out = _impl->output_history.collect_inserted_bytes() / 1024.0f;
+				CNC_INFO(std::format("In: {:.2f}    Out: {:.2f}", _impl->bandwidth_in, _impl->bandwidth_out));
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+			}
+		});
 
 		// Gfx
 		app::set_framebuffer_srgb(true);
 
+
 		_tx_background = texture2d::load_from_file("assets/ui_bg.png", texture_format::rgba8, texture_filter_mode::linear);
 		_tx_frame = texture2d::load_from_file("assets/ui_frame.png", texture_format::rgba8, texture_filter_mode::linear);
+		_tx_volume = texture2d::load_from_file("assets/ui_volume.png", texture_format::rgba8, texture_filter_mode::linear);
+		_tx_microphone = texture2d::load_from_file("assets/ui_mic.png", texture_format::rgba8, texture_filter_mode::linear);
 
-		_fb_bloom.create({ texture_format::rgba32f }, s_window_size[0], s_window_size[1]);
+		_fb_bloom.create({ texture_format::rgba32f }, _tx_background.get_width(), _tx_background.get_height());
 		_fx_bloom = std::make_unique<effects::bloom>();
 		_fx_bloom->kick = 0.25f;
 		_fx_bloom->threshold = 1.0f;
 
+		
 	}
 
 	void voice_chat_scene::draw_wave_forms()
 	{
+		constexpr auto ws = s_window_size;
+
+		const auto width = _tx_background.get_width();
+
 		app::reset_context();
-		app::viewport(s_window_size - s_frame_padding);
+		app::viewport({ _tx_background.get_width(), _tx_background.get_height() });
 		app::set_projection(s_projection);
 
 		_fb_bloom.bind();
@@ -241,16 +196,15 @@ namespace cnc
 		app::with([&] {
 			app::color(colors::blue);
 			app::begin(app::primitive_type::line_strip);
-			for (auto x : std::views::iota(0, s_window_size[0]))
+			for (auto x : std::views::iota(0u, width))
 			{
 				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
-				const float age = x / float(s_window_size[0]);
-				//const float y = s_window_size[1] * .45f + _impl->sample_incoming_audio(x / float(s_window_size[0])) / normalizer * s_window_size[1] * .5f;
-				const float y = s_window_size[1] * .4f + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .5f;
+				const float age = x / float(width);
+				const float y = s_window_size[1] * .55f + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .25f;
 				app::vertex(vec2f{ x, y });
 			}
 			app::end();
-			});
+		});
 
 
 
@@ -258,15 +212,52 @@ namespace cnc
 		app::with([&] {
 			app::color(colors::red);
 			app::begin(app::primitive_type::line_strip);
-			for (auto x : std::views::iota(0, s_window_size[0]))
+			for (auto x : std::views::iota(0u, width))
 			{
 				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
-				const float age = x / float(s_window_size[0]);
-				const float y = s_window_size[1] * .6f + _impl->input_history.sample(age) / normalizer * s_window_size[1] * .5f;
+				const float age = x / float(width);
+				const float y = s_window_size[1] * .7f + _impl->input_history.sample(age) / normalizer * s_window_size[1] * .25f;
 				app::vertex(vec2f{ x, y });
 			}
 			app::end();
-			});
+		});
+
+		// Mic
+		app::with([&] {
+
+			static constexpr vec2f pos{ 96, ws[1] - 268 };
+			static constexpr vec2f slider_pos{ 136, ws[1] - 257 };
+
+
+			app::pivot({ 0, 0 });
+			app::color(_impl->config.input_volume == 0.0f ? vec3f{ .5f } : colors::red);
+
+			if (_ui.button(__LINE__, pos, _tx_microphone)) {
+				_impl->config.input_volume = (1.0f - _impl->config.input_volume);
+			}
+
+			_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.input_volume);
+
+		});
+
+		// Speaker
+		app::with([&] {
+			static constexpr vec2f button_pos{ 96, ws[1] - 310 };
+			static constexpr vec2f slider_pos{ 136, ws[1] - 306 };
+
+			app::pivot({ 0, 0 });
+			
+			app::color(_impl->config.output_volume == 0.0f ? vec3f{ .5f } : colors::blue);
+			
+			if (_ui.button(__LINE__, button_pos, _tx_volume)) {
+				_impl->config.output_volume = (1.0f - _impl->config.output_volume);
+			}
+
+			_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.output_volume);
+
+		});
+
+
 
 		// Bloom
 		app::flush();
@@ -291,7 +282,7 @@ namespace cnc
 
 		static constexpr auto ws = s_window_size;
 
-		_ui.capture_input();
+		_ui.begin_frame();
 
 		// Window dragging
 		vec2f drag_delta;
@@ -300,18 +291,22 @@ namespace cnc
 
 		draw_wave_forms();
 
+
 		app::reset_context();
 		app::viewport(ws);
 		app::set_projection(s_projection);
 		app::clear(vec4f{ 0.0f, 0.0f, 0.0f, 0.0f });
 
+
+
+
 		// Background
 		
 		app::with([&] {
 			app::color(1.0f);
-			app::pivot({ 0, 0 });
+			app::pivot({ 0, 1 });
 			app::texture(_tx_background);
-			app::quad({ 0, ws[1] - _tx_background.get_height() }, {_tx_background.get_width(), _tx_background.get_height()});
+			app::quad({ 0, ws[1] }, {_tx_background.get_width(), _tx_background.get_height()});
 			app::no_texture();
 		});
 		app::flush();
@@ -320,34 +315,36 @@ namespace cnc
 		// Blit wave forms
 		glBlendFunc(GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA);
 		app::with([&] {
-			app::pivot({ 0, 0 });
+			app::pivot({ 0, 1 });
 			app::color(1.0f);
 			app::texture(_fx_bloom->get_result());
-			app::quad({ 0, 0 }, vec2f{ ws });
+			app::quad({ 0, ws[1] }, vec2f{ws});
 			app::no_texture();
 		});
 		app::flush();
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+
 		
-
-		// Mute button
-		app::color(_impl->config.input_volume == 0.0f ? vec3f{ 1.0f, 0.0f, 0.0f } : vec3f{ 0.0f, 1.0f, 0.0f });
-		if (_ui.round_button(1, { ws[0] / 2.0f, ws[1] / 4.0f }, 50)) {
-			_impl->config.input_volume = (1.0f - _impl->config.input_volume);
-		}
-
 
 		// Draw frame
 		app::with([&] {
 			app::color(1.0f);
 			app::pivot({ 0, 0 });
 			app::texture(_tx_frame);
-			app::quad({ 0, ws[1] - _tx_frame.get_height() }, {_tx_frame.get_width(), _tx_frame.get_height()});
+			app::quad({ 0, 0 }, {_tx_frame.get_width(), _tx_frame.get_height()});
 			app::no_texture();
 		});
 
+		// Close button
+		if (_ui.button_area(__LINE__, { 332, ws[1] - 67 }, { 40, 40 })) {
+			app::quit();
+		}
+
 		// Flush
 		app::flush();
+
+		_ui.end_frame();
 	}
 
 	void voice_chat_scene::on_detach()

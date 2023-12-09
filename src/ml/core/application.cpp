@@ -295,6 +295,7 @@ namespace ml::app
 		std::mt19937 prng;
 		std::uniform_real_distribution<float> dist01{0.0f, 1.0f};
 		time current_time;
+		bool running{ true };
 	} s_app_context;
 
 	static struct rendering_context
@@ -1086,6 +1087,8 @@ namespace ml::app
 
 	const time &get_time() { return s_app_context.current_time; }
 
+	void quit() { s_app_context.running = false; }
+
 	std::int32_t run(const window_props& props)
 	{
 
@@ -1105,7 +1108,7 @@ namespace ml::app
 		auto prev_time = clock_t::now();
 
 		/* Loop until the user closes the window */
-		while (!glfwWindowShouldClose(s_app_context.window))
+		while (app_ctx.running && !glfwWindowShouldClose(s_app_context.window))
 		{
 			auto &ctx = s_rendering_context;
 
@@ -1143,6 +1146,10 @@ namespace ml::app
 			/* Poll for and process events */
 			glfwPollEvents();
 		}
+
+		app_ctx.next_scene = nullptr;
+		app_ctx.current_scene->on_detach();
+		app_ctx.current_scene = nullptr;
 
 		terminate();
 		return 0;

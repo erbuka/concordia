@@ -15,6 +15,7 @@ namespace cnc
 	struct voice_chat_config
 	{
 		float input_volume{ 1.0f };
+		float output_volume{ 1.0f };
 	};
 
 	class voice_chat_scene: public ml::scene
@@ -28,7 +29,7 @@ namespace cnc
 		voice_chat_scene_impl* _impl;
 		ui _ui;
 
-		texture2d _tx_background, _tx_frame;
+		texture2d _tx_background, _tx_frame, _tx_volume, _tx_microphone;
 		framebuffer _fb_bloom;
 		std::unique_ptr<effects::bloom> _fx_bloom;
 
