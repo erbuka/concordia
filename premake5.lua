@@ -149,8 +149,8 @@ project "ConcordiaClient"
         "src/client/**.h"  
     }
 
-    postbuildcommands {
-        "{COPY} ../assets ../bin/%{cfg.buildcfg}/%{prj.name}/assets"
+    prebuildcommands {
+        "python ../pack_assets.py ../assets > ../src/client/assets.generated.h"
     }
 
     links { "MediaLib", "Glad", "GLFW" }

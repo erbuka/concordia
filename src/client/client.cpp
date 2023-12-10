@@ -12,6 +12,7 @@
 #include <asio.hpp>
 
 #include "log.h"
+#include "assets.generated.h"
 
 #undef max
 
@@ -183,19 +184,24 @@ namespace cnc
 		// Gfx
 		app::set_framebuffer_srgb(true);
 
-
+		/*
 		_tx_background = texture2d::load_from_file("assets/ui_bg.png", texture_format::rgba8, texture_filter_mode::linear);
 		_tx_frame = texture2d::load_from_file("assets/ui_frame.png", texture_format::rgba8, texture_filter_mode::linear);
 		_tx_volume = texture2d::load_from_file("assets/ui_volume.png", texture_format::rgba8, texture_filter_mode::linear);
 		_tx_microphone = texture2d::load_from_file("assets/ui_mic.png", texture_format::rgba8, texture_filter_mode::linear);
+		*/
+
+		_tx_background = texture2d::load_from_memory(assets::ui_bg_png.data(), assets::ui_bg_png.size(), texture_format::rgba8, texture_filter_mode::linear);
+		_tx_frame = texture2d::load_from_memory(assets::ui_frame_png.data(), assets::ui_frame_png.size(), texture_format::rgba8, texture_filter_mode::linear);
+		_tx_volume = texture2d::load_from_memory(assets::ui_volume_png.data(), assets::ui_volume_png.size(), texture_format::rgba8, texture_filter_mode::linear);
+		_tx_microphone = texture2d::load_from_memory(assets::ui_mic_png.data(), assets::ui_mic_png.size(), texture_format::rgba8, texture_filter_mode::linear);
 
 		_fb_bloom.create({ texture_format::rgba32f }, _tx_background.get_width(), _tx_background.get_height());
 		_fx_bloom = std::make_unique<effects::bloom>();
 		_fx_bloom->kick = 0.25f;
 		_fx_bloom->threshold = 1.0f;
 
-		_font.load_from_file("assets/cour.ttf");
-		
+		_font.load_from_memory(assets::cour_ttf.data(), assets::cour_ttf.size());
 	}
 
 	void voice_chat_scene::draw_screen()
@@ -213,6 +219,7 @@ namespace cnc
 
 		if (_state == connection_state::connected)
 		{
+
 			// Output Wave
 			app::with([&] {
 
@@ -226,6 +233,7 @@ namespace cnc
 					app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_out), 16.0f);
 					});
 
+
 				app::begin(app::primitive_type::line_strip);
 				for (auto x : std::views::iota(0u, vs[0]))
 				{
@@ -236,6 +244,7 @@ namespace cnc
 				}
 				app::end();
 				});
+			
 
 
 			// Input Wave

@@ -63,6 +63,38 @@ namespace ml
 		if (mode == texture_filter_mode::linear_mipmap_linear)
 			glGenerateMipmap(GL_TEXTURE_2D);
 
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, s_filter_modes[mode].first);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, s_filter_modes[mode].second);
+
+		tex._format = fmt;
+		tex._filter_mode = mode;
+		tex._width = width;
+		tex._height = height;
+
+		return tex;
+	}
+
+	texture2d texture2d::load_from_memory(const void* ptr, const std::size_t length, const texture_format fmt, const texture_filter_mode mode)
+	{
+		std::int32_t width, height, channels;
+
+		stbi_set_flip_vertically_on_load(true);
+
+		std::unique_ptr<float, decltype([](float* p) { stbi_image_free(p); }) > 
+			data(stbi_loadf_from_memory(static_cast<const std::uint8_t*>(ptr), length, &width, &height, &channels, 4));
+
+		if (data == nullptr)
+			throw std::runtime_error("Something went very wrong!");
+
+		texture2d tex;
+		glCreateTextures(GL_TEXTURE_2D, 1, &tex._id);
+		glBindTexture(GL_TEXTURE_2D, tex._id);
+		glTexStorage2D(GL_TEXTURE_2D, get_mipmap_levels(width, height), s_formats[fmt], width, height);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_FLOAT, data.get());
+
+		if (mode == texture_filter_mode::linear_mipmap_linear)
+			glGenerateMipmap(GL_TEXTURE_2D);
+
 		glBindTexture(GL_TEXTURE_2D, tex._id);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, s_filter_modes[mode].first);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, s_filter_modes[mode].second);
@@ -73,6 +105,8 @@ namespace ml
 		tex._height = height;
 
 		return tex;
+
+
 	}
 
 	texture2d texture2d::load_from_file(const std::string_view path, const texture_format fmt, const texture_filter_mode mode)

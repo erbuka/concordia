@@ -49,9 +49,9 @@ namespace ml
 
 		~texture2d();
 	
-
 		static texture2d load(const texture_format fmt, const std::size_t width, const std::size_t height, const texture_filter_mode filter, const void* data);
 		static texture2d load_from_file(const std::string_view path, const texture_format fmt, const  texture_filter_mode filter);
+		static texture2d load_from_memory(const void* data, const std::size_t length, const texture_format fmt, const  texture_filter_mode filter);
 
 		std::uint32_t get_native_handle() const;
 
