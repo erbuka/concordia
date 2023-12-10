@@ -4,6 +4,9 @@
 #include <cstdlib>
 #include <array>
 #include <mutex>
+#include <ranges>
+#include <algorithm>
+#include <tuple>
 
 namespace cnc
 {
@@ -25,7 +28,21 @@ namespace cnc
 	constexpr std::size_t max_queue_size_in_bytes = buffer_size * 5 * sizeof(sample_t);
 	using buffer_t = std::array<std::int16_t, buffer_size>;
 
+	template<typename K, typename V, std::size_t N>
+	class static_map
+	{
+	public:
+		std::array<std::pair<K, V>, N> data;
 
+		constexpr const V& operator[](const K& k) const
+		{
+			const auto it = std::ranges::find_if(data, [&](const auto& p) { return p.first == k; });
+			if (it == data.end())
+				throw std::runtime_error("Not found");
+			return it->second;
+		}
+
+	};
 
 	class history_buffer
 	{

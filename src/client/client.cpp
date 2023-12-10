@@ -254,7 +254,7 @@ namespace cnc
 
 			static constexpr vec2f pos{ 96, ws[1] - 268 };
 			static constexpr vec2f slider_pos{ 136, ws[1] - 257 };
-
+			
 
 			app::pivot({ 0, 0 });
 			app::color(_impl->config.input_volume == 0.0f ? vec3f{ .5f } : colors::red);
