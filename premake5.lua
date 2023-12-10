@@ -1,6 +1,6 @@
 workspace "Concordia"
     architecture "x86_64"
-    configurations { "Debug", "Release",  }
+    configurations { "Debug", "Release", "Dist" }
     startproject "ConcordiaClient"
     location(_ACTION)
 
@@ -10,7 +10,12 @@ workspace "Concordia"
         optimize "Off"
 
     filter "configurations:Release"
+        defines { "DEBUG" }
         symbols "On"
+        optimize "On"
+    
+    filter "configurations:Dist"
+        symbols "Off"
         optimize "On"
 
     filter "system:windows"

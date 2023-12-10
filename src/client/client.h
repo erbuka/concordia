@@ -15,6 +15,8 @@ namespace cnc
 
 	struct voice_chat_config
 	{
+		std::string host;
+		u32 port;
 		float input_volume{ 1.0f };
 		float output_volume{ 1.0f };
 	};
@@ -27,11 +29,13 @@ namespace cnc
 	class voice_chat_scene: public ml::scene
 	{
 	public:
+		voice_chat_scene(voice_chat_config cfg);
 		~voice_chat_scene();
 		void on_attach() override;
 		void on_update() override;
 		void on_detach() override;
 	private:
+		voice_chat_config _config;
 		voice_chat_scene_impl* _impl;
 		ui _ui;
 		

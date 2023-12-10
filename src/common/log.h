@@ -17,5 +17,10 @@ namespace cnc::log
 	inline void error(const std::string_view message) { send_message(message, level::error); }
 }
 
+#ifdef DEBUG
 #define CNC_INFO(...) cnc::log::info(__VA_ARGS__)
 #define CNC_ERROR(...) cnc::log::error(__VA_ARGS__)
+#else
+#define CNC_INFO(...)
+#define CNC_ERROR(...)
+#endif

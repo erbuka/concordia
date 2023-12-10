@@ -36,15 +36,13 @@ namespace cnc
 	struct voice_chat_scene_impl 
 	{
 
-		voice_chat_config config;
-
+		
+		float input_volume{ 1.f }, output_volume{ 1.f };
 		float saved_input_volume{1.f}, saved_output_volume{1.f};
-
 
 		ma_device device{};
 		asio::io_context ctx{};
 		tcp::socket socket;
-
 
 		float bandwidth_in{ 0 };
 		float bandwidth_out{ 0 };
@@ -85,7 +83,7 @@ namespace cnc
 		{
 			processed_input.resize(input.size());
 			
-			std::ranges::transform(input, processed_input.begin(), [vol = impl.config.input_volume](const sample_t s) { return s * vol; });
+			std::ranges::transform(input, processed_input.begin(), [vol = impl.input_volume](const sample_t s) { return s * vol; });
 			std::ranges::copy(processed_input, std::back_inserter(impl.input_history));
 			
 			try { asio::write(impl.socket, asio::buffer(processed_input)); }
@@ -137,7 +135,7 @@ namespace cnc
 						_state = connection_state::connected;
 						const auto bytes_read = asio::read(socket, asio::buffer(buffer));
 
-						std::ranges::for_each(buffer, [vol = _impl->config.output_volume](sample_t& s) { s *= vol; });
+						std::ranges::for_each(buffer, [vol = _impl->output_volume](sample_t& s) { s *= vol; });
 						std::ranges::copy(buffer, std::back_inserter(_impl->output_history));
 
 						if (bytes_read > 0)
@@ -150,7 +148,7 @@ namespace cnc
 					{
 						_state = connection_state::disconnected;
 						asio::error_code error;
-						_impl->socket.connect(tcp::endpoint(asio::ip::address_v4::from_string("127.0.0.1"), 3000), error);
+						_impl->socket.connect(tcp::endpoint(asio::ip::address_v4::from_string(_config.host), _config.port), error);
 						if (error)
 						{
 							std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -183,13 +181,6 @@ namespace cnc
 
 		// Gfx
 		app::set_framebuffer_srgb(true);
-
-		/*
-		_tx_background = texture2d::load_from_file("assets/ui_bg.png", texture_format::rgba8, texture_filter_mode::linear);
-		_tx_frame = texture2d::load_from_file("assets/ui_frame.png", texture_format::rgba8, texture_filter_mode::linear);
-		_tx_volume = texture2d::load_from_file("assets/ui_volume.png", texture_format::rgba8, texture_filter_mode::linear);
-		_tx_microphone = texture2d::load_from_file("assets/ui_mic.png", texture_format::rgba8, texture_filter_mode::linear);
-		*/
 
 		_tx_background = texture2d::load_from_memory(assets::ui_bg_png.data(), assets::ui_bg_png.size(), texture_format::rgba8, texture_filter_mode::linear);
 		_tx_frame = texture2d::load_from_memory(assets::ui_frame_png.data(), assets::ui_frame_png.size(), texture_format::rgba8, texture_filter_mode::linear);
@@ -279,16 +270,16 @@ namespace cnc
 
 
 				app::pivot({ 0, 0 });
-				app::color(_impl->config.input_volume == 0.0f ? vec3f{ .5f } : colors::red);
+				app::color(_impl->input_volume == 0.0f ? vec3f{ .5f } : colors::red);
 
 				if (_ui.button(__LINE__, pos, _tx_microphone)) {
-					if (_impl->config.input_volume == 0.0f)
-						_impl->config.input_volume = _impl->saved_input_volume;
+					if (_impl->input_volume == 0.0f)
+						_impl->input_volume = _impl->saved_input_volume;
 					else
-						_impl->saved_input_volume = std::exchange(_impl->config.input_volume, 0.0f);
+						_impl->saved_input_volume = std::exchange(_impl->input_volume, 0.0f);
 				}
 
-				_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.input_volume);
+				_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->input_volume);
 
 				});
 
@@ -299,16 +290,16 @@ namespace cnc
 
 				app::pivot({ 0, 0 });
 
-				app::color(_impl->config.output_volume == 0.0f ? vec3f{ .5f } : colors::blue);
+				app::color(_impl->output_volume == 0.0f ? vec3f{ .5f } : colors::blue);
 
 				if (_ui.button(__LINE__, button_pos, _tx_volume)) {
-					if (_impl->config.output_volume == 0.0f)
-						_impl->config.output_volume = _impl->saved_output_volume;
+					if (_impl->output_volume == 0.0f)
+						_impl->output_volume = _impl->saved_output_volume;
 					else
-						_impl->saved_output_volume = std::exchange(_impl->config.output_volume, 0);
+						_impl->saved_output_volume = std::exchange(_impl->output_volume, 0);
 				}
 
-				_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.output_volume);
+				_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->output_volume);
 
 				});
 
@@ -332,11 +323,15 @@ namespace cnc
 		_fx_bloom->apply(_fb_bloom.get_attachment(0));
 	}
 
+	voice_chat_scene::voice_chat_scene(voice_chat_config cfg) : _config(std::move(cfg)) {}
+
 	voice_chat_scene::~voice_chat_scene() = default;
 
 	void voice_chat_scene::on_attach()
 	{
 		_impl = new voice_chat_scene_impl();
+		_impl->input_volume = _config.input_volume;
+		_impl->output_volume = _config.output_volume;
 		app::set_window_size(s_window_size);
 		init();
 	}
