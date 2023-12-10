@@ -19,6 +19,11 @@ namespace cnc
 		float output_volume{ 1.0f };
 	};
 
+	enum class connection_state 
+	{
+		disconnected, connected
+	};
+
 	class voice_chat_scene: public ml::scene
 	{
 	public:
@@ -30,13 +35,15 @@ namespace cnc
 		voice_chat_scene_impl* _impl;
 		ui _ui;
 		
+		connection_state _state{ connection_state::disconnected };
+
 		font _font;
 		texture2d _tx_background, _tx_frame, _tx_volume, _tx_microphone;
 		framebuffer _fb_bloom;
 		std::unique_ptr<effects::bloom> _fx_bloom;
 
 		void init();
-		void draw_wave_forms();
+		void draw_screen();
 
 	};
 }

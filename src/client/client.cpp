@@ -119,28 +119,41 @@ namespace cnc
 
 
 		// Connection
-		_impl->socket.connect(tcp::endpoint(asio::ip::address_v4::from_string("127.0.0.1"), 3000));
 
-		_impl->read_thread = std::thread([&] {
+		_impl->read_thread = std::thread([this] {
 
 			buffer_t buffer;
 
 			auto& socket = _impl->socket;
 			auto& incoming_audio = _impl->incoming_audio;
 
-			while (socket.is_open())
+			while (_impl->running)
 			{
 				try {
 					
-					const auto bytes_read = asio::read(socket, asio::buffer(buffer));
-
-					std::ranges::for_each(buffer, [vol = _impl->config.output_volume](sample_t& s) { s *= vol; });
-					std::ranges::copy(buffer, std::back_inserter(_impl->output_history));
-
-					if (bytes_read > 0)
+					if (socket.is_open())
 					{
-						auto [lock, res] = incoming_audio.get();
-						std::ranges::copy(buffer, std::back_inserter(res));
+						_state = connection_state::connected;
+						const auto bytes_read = asio::read(socket, asio::buffer(buffer));
+
+						std::ranges::for_each(buffer, [vol = _impl->config.output_volume](sample_t& s) { s *= vol; });
+						std::ranges::copy(buffer, std::back_inserter(_impl->output_history));
+
+						if (bytes_read > 0)
+						{
+							auto [lock, res] = incoming_audio.get();
+							std::ranges::copy(buffer, std::back_inserter(res));
+						}
+					}
+					else
+					{
+						_state = connection_state::disconnected;
+						asio::error_code error;
+						_impl->socket.connect(tcp::endpoint(asio::ip::address_v4::from_string("127.0.0.1"), 3000), error);
+						if (error)
+						{
+							std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+						}
 					}
 
 				}
@@ -185,11 +198,10 @@ namespace cnc
 		
 	}
 
-	void voice_chat_scene::draw_wave_forms()
+	void voice_chat_scene::draw_screen()
 	{
 		constexpr auto ws = s_window_size;
-
-		const auto width = _tx_background.get_width();
+		const vec2f vs{ _tx_background.get_width(), _tx_background.get_height() };
 
 		app::reset_context();
 		app::viewport({ _tx_background.get_width(), _tx_background.get_height() });
@@ -199,98 +211,110 @@ namespace cnc
 
 		app::clear(vec4f{ 0.0f, 0.0f, 0.0f, 0.0f });
 
-		// Output Wave
-		app::with([&] {
-				
-			const float y_base = s_window_size[1] * .55f;
-
-			app::color(colors::blue);
-			
+		if (_state == connection_state::connected)
+		{
+			// Output Wave
 			app::with([&] {
-				app::pivot({ 0, 0 });
-				app::translate({ 100, y_base + 16.0f, 0 });
-				app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_out), 16.0f);
-			});
 
-			app::begin(app::primitive_type::line_strip);
-			for (auto x : std::views::iota(0u, width))
-			{
-				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
-				const float age = x / float(width);
-				const float y = y_base + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .25f;
-				app::vertex(vec2f{ x, y });
-			}
-			app::end();
-		});
+				const float y_base = s_window_size[1] * .55f;
+
+				app::color(colors::blue);
+
+				app::with([&] {
+					app::pivot({ 0, 0 });
+					app::translate({ 100, y_base + 16.0f, 0 });
+					app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_out), 16.0f);
+					});
+
+				app::begin(app::primitive_type::line_strip);
+				for (auto x : std::views::iota(0u, vs[0]))
+				{
+					static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
+					const float age = x / float(vs[0]);
+					const float y = y_base + _impl->output_history.sample(age) / normalizer * s_window_size[1] * .25f;
+					app::vertex(vec2f{ x, y });
+				}
+				app::end();
+				});
 
 
-
-		// Input Wave
-		app::with([&] {
-
-			const float y_base = s_window_size[1] * .7f;
-
-			app::color(colors::red);
-
+			// Input Wave
 			app::with([&] {
+
+				const float y_base = s_window_size[1] * .7f;
+
+				app::color(colors::red);
+
+				app::with([&] {
+					app::pivot({ 0, 0 });
+					app::translate({ 100, y_base + 16.0f, 0 });
+					app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_in), 16.0f);
+					});
+
+				app::begin(app::primitive_type::line_strip);
+				for (auto x : std::views::iota(0u, vs[0]))
+				{
+					static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
+					const float age = x / float(vs[0]);
+					const float y = s_window_size[1] * .7f + _impl->input_history.sample(age) / normalizer * s_window_size[1] * .25f;
+					app::vertex(vec2f{ x, y });
+				}
+				app::end();
+				});
+
+			// Mic
+			app::with([&] {
+
+				static constexpr vec2f pos{ 96, ws[1] - 268 };
+				static constexpr vec2f slider_pos{ 136, ws[1] - 257 };
+
+
 				app::pivot({ 0, 0 });
-				app::translate({ 100, y_base + 16.0f, 0 });
-				app::draw_text(_font, std::format("{:.2f} Kb/s", _impl->bandwidth_in), 16.0f);
+				app::color(_impl->config.input_volume == 0.0f ? vec3f{ .5f } : colors::red);
+
+				if (_ui.button(__LINE__, pos, _tx_microphone)) {
+					if (_impl->config.input_volume == 0.0f)
+						_impl->config.input_volume = _impl->saved_input_volume;
+					else
+						_impl->saved_input_volume = std::exchange(_impl->config.input_volume, 0.0f);
+				}
+
+				_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.input_volume);
+
+				});
+
+			// Speaker
+			app::with([&] {
+				static constexpr vec2f button_pos{ 96, ws[1] - 310 };
+				static constexpr vec2f slider_pos{ 136, ws[1] - 306 };
+
+				app::pivot({ 0, 0 });
+
+				app::color(_impl->config.output_volume == 0.0f ? vec3f{ .5f } : colors::blue);
+
+				if (_ui.button(__LINE__, button_pos, _tx_volume)) {
+					if (_impl->config.output_volume == 0.0f)
+						_impl->config.output_volume = _impl->saved_output_volume;
+					else
+						_impl->saved_output_volume = std::exchange(_impl->config.output_volume, 0);
+				}
+
+				_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.output_volume);
+
+				});
+
+		}
+		else
+		{
+			app::with([&] {
+				const auto secs = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch());
+				const std::string dots(secs.count() % 3 + 1, '.');
+				app::translate(vec3f{ vs / 2.0f, 0.0f });
+				app::pivot({ 0.5f, 0.5f });
+				app::color(colors::red);
+				app::draw_text(_font, std::format("Connecting{}", dots), 16.0f);
 			});
-
-			app::begin(app::primitive_type::line_strip);
-			for (auto x : std::views::iota(0u, width))
-			{
-				static constexpr auto normalizer = static_cast<float>(std::numeric_limits<i16>::max());
-				const float age = x / float(width);
-				const float y = s_window_size[1] * .7f + _impl->input_history.sample(age) / normalizer * s_window_size[1] * .25f;
-				app::vertex(vec2f{ x, y });
-			}
-			app::end();
-		});
-
-		// Mic
-		app::with([&] {
-
-			static constexpr vec2f pos{ 96, ws[1] - 268 };
-			static constexpr vec2f slider_pos{ 136, ws[1] - 257 };
-			
-
-			app::pivot({ 0, 0 });
-			app::color(_impl->config.input_volume == 0.0f ? vec3f{ .5f } : colors::red);
-
-			if (_ui.button(__LINE__, pos, _tx_microphone)) {
-				if (_impl->config.input_volume == 0.0f)
-					_impl->config.input_volume = _impl->saved_input_volume;
-				else
-					_impl->saved_input_volume = std::exchange(_impl->config.input_volume, 0.0f);
-			}
-
-			_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.input_volume);
-
-		});
-
-		// Speaker
-		app::with([&] {
-			static constexpr vec2f button_pos{ 96, ws[1] - 310 };
-			static constexpr vec2f slider_pos{ 136, ws[1] - 306 };
-
-			app::pivot({ 0, 0 });
-			
-			app::color(_impl->config.output_volume == 0.0f ? vec3f{ .5f } : colors::blue);
-			
-			if (_ui.button(__LINE__, button_pos, _tx_volume)) {
-				if (_impl->config.output_volume == 0.0f)
-					_impl->config.output_volume = _impl->saved_output_volume;
-				else
-					_impl->saved_output_volume = std::exchange(_impl->config.output_volume, 0);
-			}
-
-			_ui.slider(__LINE__, slider_pos, s_slider_size, { 0, 1 }, _impl->config.output_volume);
-
-		});
-
-
+		}
 
 		// Bloom
 		app::flush();
@@ -304,9 +328,7 @@ namespace cnc
 	void voice_chat_scene::on_attach()
 	{
 		_impl = new voice_chat_scene_impl();
-
 		app::set_window_size(s_window_size);
-		
 		init();
 	}
 
@@ -322,8 +344,8 @@ namespace cnc
 		if (_ui.window_drag(drag_delta))
 			app::set_window_pos(app::get_window_pos() + vec2i{ drag_delta });
 
-		draw_wave_forms();
 
+		draw_screen();
 
 		app::reset_context();
 		app::viewport(ws);
@@ -331,19 +353,17 @@ namespace cnc
 		app::clear(vec4f{ 0.0f, 0.0f, 0.0f, 0.0f });
 
 
-
-
 		// Background
-		
+
 		app::with([&] {
 			app::color(1.0f);
 			app::pivot({ 0, 1 });
 			app::texture(_tx_background);
-			app::quad({ 0, ws[1] }, {_tx_background.get_width(), _tx_background.get_height()});
+			app::quad({ 0, ws[1] }, { _tx_background.get_width(), _tx_background.get_height() });
 			app::no_texture();
-		});
+			});
 		app::flush();
-		
+
 
 		// Blit wave forms
 		glBlendFunc(GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA);
@@ -351,9 +371,9 @@ namespace cnc
 			app::pivot({ 0, 1 });
 			app::color(1.0f);
 			app::texture(_fx_bloom->get_result());
-			app::quad({ 0, ws[1] }, vec2f{ws});
+			app::quad({ 0, ws[1] }, vec2f{ ws });
 			app::no_texture();
-		});
+			});
 		app::flush();
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -373,6 +393,7 @@ namespace cnc
 		if (_ui.button_area(__LINE__, { 332, ws[1] - 67 }, { 40, 40 })) {
 			app::quit();
 		}
+
 
 		// Flush
 		app::flush();
