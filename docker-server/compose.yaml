@@ -1,0 +1,13 @@
+name: concordia-server
+services:
+  app:
+    build:
+      context: ../
+      dockerfile: ./docker-server/Dockerfile
+    ports:
+      - "3000:3000/tcp"
+    networks:
+      - concordia
+
+networks:
+  concordia:
